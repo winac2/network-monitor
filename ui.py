@@ -48,6 +48,9 @@ class NetworkMonitorApp(ctk.CTk):
         self.status_label: ctk.CTkLabel | None = None
         self.event_log: ctk.CTkTextbox | None = None
         self.stats_box: ctk.CTkTextbox | None = None
+        self.charts: LiveCharts | None = None
+        self.current_page = ""
+        self.latest_sample: NetworkSample | None = None
         self.content = ctk.CTkFrame(self, corner_radius=0)
 
         ctk.set_appearance_mode(self.config_data.theme)
@@ -89,11 +92,17 @@ class NetworkMonitorApp(ctk.CTk):
         self.content.grid_rowconfigure(0, weight=1)
 
     def _clear_content(self) -> None:
+        self.kpis.clear()
+        self.status_label = None
+        self.event_log = None
+        self.stats_box = None
+        self.charts = None
         for child in self.content.winfo_children():
             child.destroy()
 
     def _show_dashboard(self) -> None:
         self._clear_content()
+        self.current_page = "dashboard"
         page = ctk.CTkFrame(self.content, corner_radius=0)
         page.grid(row=0, column=0, sticky="nsew", padx=18, pady=18)
         page.grid_columnconfigure(0, weight=1)
@@ -151,9 +160,12 @@ class NetworkMonitorApp(ctk.CTk):
         self.event_log = ctk.CTkTextbox(log_holder, wrap="word")
         self.event_log.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
         self._load_recent_events()
+        if self.latest_sample is not None:
+            self._apply_sample(self.latest_sample)
 
     def _show_history(self) -> None:
         self._clear_content()
+        self.current_page = "history"
         page = ctk.CTkFrame(self.content, corner_radius=0)
         page.grid(row=0, column=0, sticky="nsew", padx=18, pady=18)
         page.grid_columnconfigure(0, weight=1)
@@ -177,6 +189,7 @@ class NetworkMonitorApp(ctk.CTk):
 
     def _show_statistics(self) -> None:
         self._clear_content()
+        self.current_page = "statistics"
         page = ctk.CTkFrame(self.content, corner_radius=0)
         page.grid(row=0, column=0, sticky="nsew", padx=18, pady=18)
         page.grid_columnconfigure(0, weight=1)
@@ -188,6 +201,7 @@ class NetworkMonitorApp(ctk.CTk):
 
     def _show_settings(self) -> None:
         self._clear_content()
+        self.current_page = "settings"
         page = ctk.CTkFrame(self.content, corner_radius=0)
         page.grid(row=0, column=0, sticky="nsew", padx=18, pady=18)
         page.grid_columnconfigure(1, weight=1)
@@ -244,9 +258,11 @@ class NetworkMonitorApp(ctk.CTk):
                 self._apply_sample(item)
             elif isinstance(item, EventRecord):
                 self._append_event(item)
-        self.after(250, self._poll_queue)
+        if self.winfo_exists():
+            self.after(250, self._poll_queue)
 
     def _apply_sample(self, sample: NetworkSample) -> None:
+        self.latest_sample = sample
         self._set_kpi("download", f"{sample.download or 0:.2f} Mbps")
         self._set_kpi("upload", f"{sample.upload or 0:.2f} Mbps")
         self._set_kpi("ping", "-- ms" if sample.ping is None else f"{sample.ping:.1f} ms")
@@ -258,8 +274,12 @@ class NetworkMonitorApp(ctk.CTk):
                     self.status_label.configure(text=sample.status, text_color=STATUS_COLORS.get(sample.status, "#ffffff"))
             except tk.TclError:
                 self.status_label = None
-        if hasattr(self, "charts") and self.charts.widget().winfo_exists():
-            self.charts.add_sample(sample)
+        if self.charts is not None:
+            try:
+                if self.charts.widget().winfo_exists():
+                    self.charts.add_sample(sample)
+            except tk.TclError:
+                self.charts = None
         self.notifier.handle_status(sample.status)
 
     def _set_kpi(self, key: str, value: str) -> None:
@@ -275,8 +295,12 @@ class NetworkMonitorApp(ctk.CTk):
     def _append_event(self, event: EventRecord) -> None:
         if self.event_log is None:
             return
-        self.event_log.insert("end", f"{event.timestamp:%H:%M:%S}  {event.status}  {event.message}\n")
-        self.event_log.see("end")
+        try:
+            if self.event_log.winfo_exists():
+                self.event_log.insert("end", f"{event.timestamp:%H:%M:%S}  {event.status}  {event.message}\n")
+                self.event_log.see("end")
+        except tk.TclError:
+            self.event_log = None
 
     def _load_recent_events(self) -> None:
         if self.event_log is None:
@@ -285,9 +309,9 @@ class NetworkMonitorApp(ctk.CTk):
             self._append_event(event)
 
     def _tick_clock(self) -> None:
-        if "time" in self.kpis:
-            self.kpis["time"].configure(text=datetime.now().strftime("%H:%M:%S"))
-        self.after(1000, self._tick_clock)
+        self._set_kpi("time", datetime.now().strftime("%H:%M:%S"))
+        if self.winfo_exists():
+            self.after(1000, self._tick_clock)
 
     def _export_csv(self) -> None:
         self._export("csv")
@@ -314,6 +338,13 @@ class NetworkMonitorApp(ctk.CTk):
 
     def _refresh_statistics(self) -> None:
         if self.stats_box is None:
+            return
+        try:
+            if not self.stats_box.winfo_exists():
+                self.stats_box = None
+                return
+        except tk.TclError:
+            self.stats_box = None
             return
         samples = self.database.fetch_samples()
         stats = calculate_statistics(samples)
