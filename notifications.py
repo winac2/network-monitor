@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import platform
+import time
 
 try:
     from plyer import notification
@@ -16,8 +18,11 @@ LOGGER = logging.getLogger(__name__)
 class Notifier:
     """Sends state-change notifications without making UI code depend on plyer."""
 
-    def __init__(self) -> None:
+    def __init__(self, enabled: bool = False, min_interval_seconds: float = 60.0) -> None:
+        self.enabled = enabled
+        self.min_interval_seconds = min_interval_seconds
         self._last_status = ""
+        self._last_sent_at = 0.0
 
     def handle_status(self, status: str) -> None:
         """Notify only when entering meaningful network states."""
@@ -37,10 +42,21 @@ class Notifier:
     def send(self, title: str, message: str) -> None:
         """Send a desktop notification if the optional dependency is available."""
 
+        if not self.enabled:
+            LOGGER.info("%s: %s", title, message)
+            return
+        if platform.system() == "Windows":
+            LOGGER.info("Windows desktop notification suppressed to avoid tray icon buildup: %s: %s", title, message)
+            return
+        now = time.monotonic()
+        if now - self._last_sent_at < self.min_interval_seconds:
+            LOGGER.info("Notification rate-limited: %s: %s", title, message)
+            return
         if notification is None:
             LOGGER.info("%s: %s", title, message)
             return
         try:
             notification.notify(title=title, message=message, app_name="Network Monitor", timeout=5)
+            self._last_sent_at = now
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("Notification failed: %s", exc)

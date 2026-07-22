@@ -34,6 +34,7 @@ class AppConfig:
     ping_host: str = "8.8.8.8"
     ping_interval_seconds: float = 1.0
     speedtest_interval_seconds: float = 60.0
+    desktop_notifications_enabled: bool = False
     theme: str = "dark"
     thresholds: Thresholds = field(default_factory=Thresholds)
 

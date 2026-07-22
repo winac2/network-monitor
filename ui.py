@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from pathlib import Path
+import platform
 import queue
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -43,7 +44,7 @@ class NetworkMonitorApp(ctk.CTk):
         self.monitor = monitor
         self.ui_queue = ui_queue
         self.exporter = Exporter(database)
-        self.notifier = Notifier()
+        self.notifier = Notifier(enabled=self.config_data.desktop_notifications_enabled)
         self.kpis: dict[str, ctk.CTkLabel] = {}
         self.status_label: ctk.CTkLabel | None = None
         self.event_log: ctk.CTkTextbox | None = None
@@ -226,6 +227,14 @@ class NetworkMonitorApp(ctk.CTk):
         theme.set(self.config_data.theme)
         theme.grid(row=len(rows), column=1, sticky="w", pady=8)
         ctk.CTkLabel(page, text="Theme").grid(row=len(rows), column=0, sticky="w", pady=8)
+        notifications_enabled = tk.BooleanVar(value=self.config_data.desktop_notifications_enabled)
+        notification_state = "disabled" if platform.system() == "Windows" else "normal"
+        ctk.CTkCheckBox(
+            page,
+            text="Desktop notifications",
+            variable=notifications_enabled,
+            state=notification_state,
+        ).grid(row=len(rows) + 1, column=1, sticky="w", pady=8)
 
         def save() -> None:
             try:
@@ -237,16 +246,20 @@ class NetworkMonitorApp(ctk.CTk):
                     entries["packet_loss_warning_percent"].get()
                 )
                 self.config_data.thresholds.download_drop_ratio = float(entries["download_drop_ratio"].get())
+                self.config_data.desktop_notifications_enabled = (
+                    notifications_enabled.get() and platform.system() != "Windows"
+                )
                 self.config_data.theme = theme.get()
             except ValueError:
                 messagebox.showerror("Invalid settings", "Numeric settings must contain valid numbers.")
                 return
             save_config(self.config_data)
             ctk.set_appearance_mode(self.config_data.theme)
+            self.notifier.enabled = self.config_data.desktop_notifications_enabled
             self.monitor.update_config(self.config_data)
             messagebox.showinfo("Settings saved", "Settings were saved and applied.")
 
-        ctk.CTkButton(page, text="Save Settings", command=save).grid(row=len(rows) + 1, column=1, sticky="w", pady=16)
+        ctk.CTkButton(page, text="Save Settings", command=save).grid(row=len(rows) + 2, column=1, sticky="w", pady=16)
 
     def _poll_queue(self) -> None:
         while True:
