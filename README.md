@@ -1,7 +1,7 @@
 # Network Monitor
-
+by ``` winac2```
 Python desktop application for real-time Internet performance monitoring and congestion detection.
-
+Theo dõi tình trạng mạng theo thời gian thực
 ## Features
 
 - Live dashboard for current download throughput, upload throughput, ping, jitter, packet loss, status, and current time
